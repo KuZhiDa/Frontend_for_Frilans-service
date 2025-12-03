@@ -13,8 +13,14 @@ interface Project {
 	description?: string
 }
 
+interface FormErrors {
+	projectName?: string
+	urlGit?: string
+	description?: string
+}
+
 interface ErrorResponse {
-	message?: string
+	message?: string | Record<string, Record<string, string>>
 }
 
 export default function ProjectsPage() {
@@ -38,6 +44,7 @@ export default function ProjectsPage() {
 		urlGit: '',
 		description: '',
 	})
+	const [errors, setErrors] = useState<FormErrors>({})
 
 	useEffect(() => {
 		const id_user = localStorage.getItem('id_user')
@@ -59,14 +66,17 @@ export default function ProjectsPage() {
 				})
 				const data = await res.json()
 
-				if (!res.ok) throw new Error(data.message || 'Ошибка загрузки проектов')
 				if (data.message) {
 					setProjects([])
 					return
 				}
 				setProjects(data)
 			} catch (err: any) {
-				setError(err.message)
+				const message = err?.response?.data?.message
+				const errorMessage = typeof message === 'string' 
+					? message 
+					: err?.message || 'Ошибка загрузки проектов'
+				setError(errorMessage)
 			} finally {
 				setLoading(false)
 			}
@@ -80,6 +90,8 @@ export default function ProjectsPage() {
 
 		try {
 			setSaving(true)
+			setErrors({})
+			setError(null)
 
 			const res = await fetchWithAuth(`${API_URL}/api/work-info/project/${id_card}`, {
 				method: 'POST',
@@ -91,11 +103,6 @@ export default function ProjectsPage() {
 					...formData,
 				}),
 			})
-
-			if (!res.ok) {
-				const data: ErrorResponse = await res.json()
-				throw new Error(data.message || 'Ошибка при добавлении проекта')
-			}
 
 			const newProject = await res.json()
 
@@ -110,11 +117,65 @@ export default function ProjectsPage() {
 			setProjects(prev => [...prev, addedProject])
 			setFormData({ projectName: '', urlGit: '', description: '' })
 			setIsAdding(false)
+			setErrors({})
+			setError(null)
 		} catch (err: any) {
-			alert('Ошибка: ' + err.message)
+			const message = err?.response?.data?.message
+
+			if (
+				message &&
+				typeof message === 'object' &&
+				!Array.isArray(message) &&
+				message !== null
+			) {
+				const messages: Record<string, Record<string, string>> = message
+				const backendErrors: FormErrors = {}
+
+				if (Object.keys(messages).length > 0) {
+					Object.keys(messages).forEach(field => {
+						const msgObj = messages[field]
+						if (msgObj && typeof msgObj === 'object') {
+							if (msgObj.isNotEmpty)
+								backendErrors[field as keyof FormErrors] = msgObj.isNotEmpty
+							else if (msgObj.isLength)
+								backendErrors[field as keyof FormErrors] = msgObj.isLength
+							else if (msgObj.length)
+								backendErrors[field as keyof FormErrors] = msgObj.length
+							else if (msgObj.isEmail)
+								backendErrors[field as keyof FormErrors] = msgObj.isEmail
+							else if (msgObj.matches)
+								backendErrors[field as keyof FormErrors] = msgObj.matches
+							else if (msgObj.isIn)
+								backendErrors[field as keyof FormErrors] = msgObj.isIn
+							else if (msgObj.isNumber)
+								backendErrors[field as keyof FormErrors] = msgObj.isNumber
+							else if (msgObj.isUrl)
+								backendErrors[field as keyof FormErrors] = msgObj.isUrl
+							else if (msgObj.min)
+								backendErrors[field as keyof FormErrors] = msgObj.min
+							else if (msgObj.max)
+								backendErrors[field as keyof FormErrors] = msgObj.max
+						}
+					})
+					setErrors(backendErrors)
+					return
+				}
+			}
+
+			const errorMessage =
+				typeof message === 'string'
+					? message
+					: err?.message || 'Ошибка при добавлении проекта'
+			setError(errorMessage)
 		} finally {
 			setSaving(false)
 		}
+	}
+
+	const renderFieldErrors = (field: keyof FormErrors) => {
+		const msg = errors[field]
+		if (!msg) return null
+		return <p className='text-red-600 text-xs mt-1'>{msg}</p>
 	}
 
 	const handleDeleteProject = async (id: number) => {
@@ -122,14 +183,17 @@ export default function ProjectsPage() {
 
 		if (!confirm('Вы уверены, что хотите удалить проект?')) return
 		try {
-			const res = await fetchWithAuth(`${API_URL}/api/work-info/project/${id}`, {
+			await fetchWithAuth(`${API_URL}/api/work-info/project/${id}`, {
 				method: 'DELETE',
 			})
 
-			if (!res.ok) throw new Error('Ошибка при удалении проекта')
 			setProjects(prev => prev.filter(p => p.id !== id))
 		} catch (err: any) {
-			alert('Ошибка: ' + err.message)
+			const message = err?.response?.data?.message
+			const errorMessage = typeof message === 'string' 
+				? message 
+				: err?.message || 'Ошибка при удалении проекта'
+			alert('Ошибка: ' + errorMessage)
 		}
 	}
 
@@ -185,6 +249,12 @@ export default function ProjectsPage() {
 					</h1>
 					<div className='w-24'></div>
 				</div>
+
+				{error && isAdding && (
+					<div className='w-full bg-red-50 border border-red-200 rounded-lg p-4 mb-6'>
+						<p className='text-red-600 text-center'>{error}</p>
+					</div>
+				)}
 
 				<div className='w-full overflow-x-auto'>
 					<table className='min-w-full table-auto border-collapse border border-gray-300'>
@@ -246,59 +316,98 @@ export default function ProjectsPage() {
 							)}
 
 							{isAdding && isMyProfile && (
-								<tr className='bg-yellow-50'>
-									<td className='px-4 py-2 border'>
-										<input
-											type='text'
-											value={formData.projectName}
-											onChange={e =>
+								<>
+									<tr className='bg-yellow-50'>
+										<td className='px-4 py-2 border'>
+											<input
+												type='text'
+												value={formData.projectName}
+											onChange={e => {
 												setFormData({
 													...formData,
 													projectName: e.target.value,
 												})
-											}
-											className='w-full border rounded px-2 py-1'
-										/>
-									</td>
-									<td className='px-4 py-2 border'>
-										<input
-											type='text'
-											value={formData.urlGit}
-											onChange={e =>
-												setFormData({ ...formData, urlGit: e.target.value })
-											}
-											className='w-full border rounded px-2 py-1'
-										/>
-									</td>
-									<td className='px-4 py-2 border'>
-										<input
-											type='text'
-											value={formData.description}
-											onChange={e =>
-												setFormData({
-													...formData,
-													description: e.target.value,
-												})
-											}
-											className='w-full border rounded px-2 py-1'
-										/>
-									</td>
-									<td className='px-4 py-2 border text-right flex gap-2 justify-end'>
-										<button
-											onClick={handleAddProject}
-											className='bg-green-500 text-white px-3 py-1 rounded'
-											disabled={saving}
-										>
-											Сохранить
-										</button>
-										<button
-											onClick={() => setIsAdding(false)}
-											className='bg-gray-500 text-white px-3 py-1 rounded'
-										>
-											Отмена
-										</button>
-									</td>
-								</tr>
+												if (errors.projectName) {
+													setErrors(prev => {
+														const newErrors = { ...prev }
+														delete newErrors.projectName
+														return newErrors
+													})
+												}
+												if (error) setError(null)
+											}}
+												className={`w-full border rounded px-2 py-1 ${
+													errors.projectName ? 'border-red-500 bg-red-50' : ''
+												}`}
+											/>
+											{renderFieldErrors('projectName')}
+										</td>
+										<td className='px-4 py-2 border'>
+											<input
+												type='text'
+												value={formData.urlGit}
+												onChange={e => {
+													setFormData({ ...formData, urlGit: e.target.value })
+													if (errors.urlGit) {
+														setErrors(prev => {
+															const newErrors = { ...prev }
+															delete newErrors.urlGit
+															return newErrors
+														})
+													}
+													if (error) setError(null)
+												}}
+												className={`w-full border rounded px-2 py-1 ${
+													errors.urlGit ? 'border-red-500 bg-red-50' : ''
+												}`}
+											/>
+											{renderFieldErrors('urlGit')}
+										</td>
+										<td className='px-4 py-2 border'>
+											<input
+												type='text'
+												value={formData.description}
+												onChange={e => {
+													setFormData({
+														...formData,
+														description: e.target.value,
+													})
+													if (errors.description) {
+														setErrors(prev => {
+															const newErrors = { ...prev }
+															delete newErrors.description
+															return newErrors
+														})
+													}
+													if (error) setError(null)
+												}}
+												className={`w-full border rounded px-2 py-1 ${
+													errors.description ? 'border-red-500 bg-red-50' : ''
+												}`}
+											/>
+											{renderFieldErrors('description')}
+										</td>
+										<td className='px-4 py-2 border text-right flex gap-2 justify-end'>
+											<button
+												onClick={handleAddProject}
+												className='bg-green-500 text-white px-3 py-1 rounded'
+												disabled={saving}
+											>
+												Сохранить
+											</button>
+											<button
+												onClick={() => {
+													setIsAdding(false)
+													setErrors({})
+													setError(null)
+												}}
+												className='bg-gray-500 text-white px-3 py-1 rounded'
+											>
+												Отмена
+											</button>
+										</td>
+									</tr>
+								</>
 							)}
 						</tbody>
 					</table>

@@ -16,17 +16,13 @@ interface ProfileResponse {
 	education?: string
 }
 
-interface ValidationErrors {
-	age?: { min?: string; max?: string }
-	male?: { isIn?: string }
-	countryFrom?: { matches?: string }
-	cityFrom?: { matches?: string }
-	infoAboutYourself?: { max?: string }
-	education?: { max?: string }
-}
-
-interface ErrorResponse {
-	message?: string | ValidationErrors
+interface FormErrors {
+	age?: string
+	male?: string
+	countryFrom?: string
+	cityFrom?: string
+	infoAboutYourself?: string
+	education?: string
 }
 
 export default function ProfilePage() {
@@ -42,7 +38,7 @@ export default function ProfilePage() {
 	const [showEmailModal, setShowEmailModal] = useState(false)
 	const [resendingEmail, setResendingEmail] = useState(false)
 	const [emailError, setEmailError] = useState<string | null>(null)
-	const [validationErrors, setValidationErrors] = useState<ValidationErrors>({})
+	const [errors, setErrors] = useState<FormErrors>({})
 
 	const [formData, setFormData] = useState({
 		age: '',
@@ -75,7 +71,7 @@ export default function ProfilePage() {
 				return
 			}
 
-			const response = await fetchWithAuth(
+			await fetchWithAuth(
 				`${API_URL}/api/email/send/${id_user}`,
 				{
 					method: 'POST',
@@ -84,20 +80,20 @@ export default function ProfilePage() {
 					},
 				}
 			)
-
-			if (!response.ok) {
-				const data = await response.json()
-				throw new Error(data.message || 'Ошибка при отправке письма')
-			}
 		} catch (err: any) {
-			setEmailError('Ошибка при отправке письма: ' + err.message)
+			const message = err?.response?.data?.message
+			const errorMessage = typeof message === 'string' 
+				? message 
+				: err?.message || 'Ошибка при отправке письма'
+			setEmailError('Ошибка при отправке письма: ' + errorMessage)
 		} finally {
 			setResendingEmail(false)
 		}
 	}
 
 	const isEmailConfirmationRequired = (message?: string) =>
-		typeof message === 'string' && message.toLowerCase().includes('не подтвердил')
+		typeof message === 'string' &&
+		message.toLowerCase().includes('не подтвердил')
 
 	const handleEmailConfirmationRestriction = () => {
 		if (isMyProfile) {
@@ -133,12 +129,15 @@ export default function ProfilePage() {
 						male: data.male || '',
 						countryFrom: data.countryFrom || '',
 						cityFrom: data.cityFrom || '',
-						infoAboutYourself: data.infoAboutYourself || 'О себе',
+						infoAboutYourself: data.infoAboutYourself || '',
 						education: data.education || '',
 					})
 				}
 			} catch (err: any) {
-				const errorMessage = err?.message || 'Ошибка загрузки профиля'
+				const message = err?.response?.data?.message
+				const errorMessage = typeof message === 'string' 
+					? message 
+					: err?.message || 'Ошибка загрузки профиля'
 				if (isEmailConfirmationRequired(errorMessage)) {
 					handleEmailConfirmationRestriction()
 				} else {
@@ -157,9 +156,12 @@ export default function ProfilePage() {
 
 		try {
 			setSaving(true)
-			setValidationErrors({})
+			setErrors({})
+			setError(null)
 			const id_user = localStorage.getItem('id_user')
-
+			if (formData.infoAboutYourself === '') {
+				formData.infoAboutYourself = ''
+			}
 			const response = await fetchWithAuth(
 				`${API_URL}/api/profile/${
 					method === 'POST' ? 'set' : 'update'
@@ -175,32 +177,63 @@ export default function ProfilePage() {
 						male: formData.male || null,
 						countryFrom: formData.countryFrom || null,
 						cityFrom: formData.cityFrom || null,
-						infoAboutYourself: formData.infoAboutYourself,
+						infoAboutYourself: formData.infoAboutYourself || null,
 						education: formData.education,
 					}),
 				}
 			)
 
-			if (!response.ok) {
-				const errorData: ErrorResponse = await response.json()
-				if (errorData.message && typeof errorData.message === 'object') {
-					setValidationErrors(errorData.message as ValidationErrors)
-					return
-				} else {
-					throw new Error(
-						typeof errorData.message === 'string'
-							? errorData.message
-							: 'Ошибка при сохранении профиля'
-					)
-				}
-			}
-
 			const savedProfile = await response.json()
 			setProfileData(savedProfile)
 			setIsEditing(false)
-			setValidationErrors({})
+			setErrors({})
+			setError(null)
 		} catch (err: any) {
-			alert('Ошибка при сохранении профиля: ' + err.message)
+			const message = err?.response?.data?.message
+
+			if (
+				message &&
+				typeof message === 'object' &&
+				!Array.isArray(message) &&
+				message !== null
+			) {
+				const messages: Record<string, Record<string, string>> = message
+				const backendErrors: FormErrors = {}
+
+				if (Object.keys(messages).length > 0) {
+					Object.keys(messages).forEach(field => {
+						const msgObj = messages[field]
+						if (msgObj && typeof msgObj === 'object') {
+							if (msgObj.isNotEmpty)
+								backendErrors[field as keyof FormErrors] = msgObj.isNotEmpty
+							else if (msgObj.isLength)
+								backendErrors[field as keyof FormErrors] = msgObj.isLength
+							else if (msgObj.length)
+								backendErrors[field as keyof FormErrors] = msgObj.length
+							else if (msgObj.isEmail)
+								backendErrors[field as keyof FormErrors] = msgObj.isEmail
+							else if (msgObj.matches)
+								backendErrors[field as keyof FormErrors] = msgObj.matches
+							else if (msgObj.isIn)
+								backendErrors[field as keyof FormErrors] = msgObj.isIn
+							else if (msgObj.isNumber)
+								backendErrors[field as keyof FormErrors] = msgObj.isNumber
+							else if (msgObj.min)
+								backendErrors[field as keyof FormErrors] = msgObj.min
+							else if (msgObj.max)
+								backendErrors[field as keyof FormErrors] = msgObj.max
+						}
+					})
+					setErrors(backendErrors)
+					return
+				}
+			}
+
+			const errorMessage =
+				typeof message === 'string'
+					? message
+					: err?.message || 'Ошибка при сохранении профиля'
+			setError(errorMessage)
 		} finally {
 			setSaving(false)
 		}
@@ -243,7 +276,7 @@ export default function ProfilePage() {
 				male: profileData.male || '',
 				countryFrom: profileData.countryFrom || '',
 				cityFrom: profileData.cityFrom || '',
-				infoAboutYourself: profileData.infoAboutYourself || 'О себе',
+				infoAboutYourself: profileData.infoAboutYourself || '',
 				education: profileData.education || '',
 			})
 		} else {
@@ -252,22 +285,23 @@ export default function ProfilePage() {
 				male: '',
 				countryFrom: '',
 				cityFrom: '',
-				infoAboutYourself: 'О себе',
+				infoAboutYourself: '',
 				education: '',
 			})
 		}
 		setIsEditing(false)
-		setValidationErrors({})
+		setErrors({})
+		setError(null)
 	}
 
 	const handleBack = () => {
 		router.push(`/dashboard/${id_user_from_params}`)
 	}
 
-	const getFieldError = (fieldName: keyof ValidationErrors): string | null => {
-		const fieldErrors = validationErrors[fieldName]
-		if (!fieldErrors) return null
-		return Object.values(fieldErrors)[0] || null
+	const renderFieldErrors = (field: keyof FormErrors) => {
+		const msg = errors[field]
+		if (!msg) return null
+		return <p className='text-red-600 text-sm mt-1'>{msg}</p>
 	}
 
 	if (loading)
@@ -393,7 +427,11 @@ export default function ProfilePage() {
 							</h2>
 							{isMyProfile && (
 								<button
-									onClick={() => setIsEditing(true)}
+									onClick={() => {
+										setIsEditing(true)
+										setErrors({})
+										setError(null)
+									}}
 									className='bg-green-500 text-white px-8 py-3 rounded-xl text-lg font-semibold shadow-md hover:bg-green-600 hover:shadow-lg transition-all duration-300'
 								>
 									Создать карточку профиля
@@ -415,22 +453,25 @@ export default function ProfilePage() {
 										<input
 											type='number'
 											value={formData.age}
-											onChange={e =>
+											onChange={e => {
 												setFormData({ ...formData, age: e.target.value })
-											}
+												if (errors.age) {
+													setErrors(prev => {
+														const newErrors = { ...prev }
+														delete newErrors.age
+														return newErrors
+													})
+												}
+											}}
 											className={`w-full px-4 py-2 border rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 ${
-												getFieldError('age')
+												errors.age
 													? 'border-red-500 bg-red-50'
 													: 'border-gray-300'
 											}`}
 											min='1900'
 											max={new Date().getFullYear()}
 										/>
-										{getFieldError('age') && (
-											<p className='text-red-600 text-sm mt-1'>
-												{getFieldError('age')}
-											</p>
-										)}
+										{renderFieldErrors('age')}
 									</div>
 
 									<div>
@@ -439,14 +480,21 @@ export default function ProfilePage() {
 										</label>
 										<select
 											value={formData.male}
-											onChange={e =>
+											onChange={e => {
 												setFormData({
 													...formData,
 													male: e.target.value as 'М' | 'Ж',
 												})
-											}
+												if (errors.male) {
+													setErrors(prev => {
+														const newErrors = { ...prev }
+														delete newErrors.male
+														return newErrors
+													})
+												}
+											}}
 											className={`w-full px-4 py-2 border rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 ${
-												getFieldError('male')
+												errors.male
 													? 'border-red-500 bg-red-50'
 													: 'border-gray-300'
 											}`}
@@ -455,11 +503,7 @@ export default function ProfilePage() {
 											<option value='М'>Мужской</option>
 											<option value='Ж'>Женский</option>
 										</select>
-										{getFieldError('male') && (
-											<p className='text-red-600 text-sm mt-1'>
-												{getFieldError('male')}
-											</p>
-										)}
+										{renderFieldErrors('male')}
 									</div>
 
 									<div>
@@ -468,11 +512,18 @@ export default function ProfilePage() {
 										</label>
 										<select
 											value={formData.education}
-											onChange={e =>
+											onChange={e => {
 												setFormData({ ...formData, education: e.target.value })
-											}
+												if (errors.education) {
+													setErrors(prev => {
+														const newErrors = { ...prev }
+														delete newErrors.education
+														return newErrors
+													})
+												}
+											}}
 											className={`w-full px-4 py-2 border rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 ${
-												getFieldError('education')
+												errors.education
 													? 'border-red-500 bg-red-50'
 													: 'border-gray-300'
 											}`}
@@ -489,11 +540,7 @@ export default function ProfilePage() {
 											</option>
 											<option value='Другое'>Другое</option>
 										</select>
-										{getFieldError('education') && (
-											<p className='text-red-600 text-sm mt-1'>
-												{getFieldError('education')}
-											</p>
-										)}
+										{renderFieldErrors('education')}
 									</div>
 
 									<div className='md:col-span-2 grid grid-cols-1 md:grid-cols-2 gap-6'>
@@ -504,23 +551,26 @@ export default function ProfilePage() {
 											<input
 												type='text'
 												value={formData.countryFrom}
-												onChange={e =>
+												onChange={e => {
 													setFormData({
 														...formData,
 														countryFrom: e.target.value,
 													})
-												}
+													if (errors.countryFrom) {
+														setErrors(prev => {
+															const newErrors = { ...prev }
+															delete newErrors.countryFrom
+															return newErrors
+														})
+													}
+												}}
 												className={`w-full px-4 py-2 border rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 ${
-													getFieldError('countryFrom')
+													errors.countryFrom
 														? 'border-red-500 bg-red-50'
 														: 'border-gray-300'
 												}`}
 											/>
-											{getFieldError('countryFrom') && (
-												<p className='text-red-600 text-sm mt-1'>
-													{getFieldError('countryFrom')}
-												</p>
-											)}
+											{renderFieldErrors('countryFrom')}
 										</div>
 
 										<div>
@@ -530,20 +580,23 @@ export default function ProfilePage() {
 											<input
 												type='text'
 												value={formData.cityFrom}
-												onChange={e =>
+												onChange={e => {
 													setFormData({ ...formData, cityFrom: e.target.value })
-												}
+													if (errors.cityFrom) {
+														setErrors(prev => {
+															const newErrors = { ...prev }
+															delete newErrors.cityFrom
+															return newErrors
+														})
+													}
+												}}
 												className={`w-full px-4 py-2 border rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 ${
-													getFieldError('cityFrom')
+													errors.cityFrom
 														? 'border-red-500 bg-red-50'
 														: 'border-gray-300'
 												}`}
 											/>
-											{getFieldError('cityFrom') && (
-												<p className='text-red-600 text-sm mt-1'>
-													{getFieldError('cityFrom')}
-												</p>
-											)}
+											{renderFieldErrors('cityFrom')}
 										</div>
 									</div>
 
@@ -553,24 +606,27 @@ export default function ProfilePage() {
 										</label>
 										<textarea
 											value={formData.infoAboutYourself}
-											onChange={e =>
+											onChange={e => {
 												setFormData({
 													...formData,
 													infoAboutYourself: e.target.value,
 												})
-											}
+												if (errors.infoAboutYourself) {
+													setErrors(prev => {
+														const newErrors = { ...prev }
+														delete newErrors.infoAboutYourself
+														return newErrors
+													})
+												}
+											}}
 											rows={4}
 											className={`w-full px-4 py-2 border rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 ${
-												getFieldError('infoAboutYourself')
+												errors.infoAboutYourself
 													? 'border-red-500 bg-red-50'
 													: 'border-gray-300'
 											}`}
 										/>
-										{getFieldError('infoAboutYourself') && (
-											<p className='text-red-600 text-sm mt-1'>
-												{getFieldError('infoAboutYourself')}
-											</p>
-										)}
+										{renderFieldErrors('infoAboutYourself')}
 									</div>
 								</div>
 
@@ -648,7 +704,11 @@ export default function ProfilePage() {
 							{isMyProfile && (
 								<div className='mt-8 flex justify-center gap-4'>
 									<button
-										onClick={() => setIsEditing(true)}
+										onClick={() => {
+											setIsEditing(true)
+											setErrors({})
+											setError(null)
+										}}
 										className='bg-blue-500 text-white px-6 py-2 rounded-lg hover:bg-blue-600 transition'
 									>
 										Редактировать

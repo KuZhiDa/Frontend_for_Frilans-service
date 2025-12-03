@@ -52,7 +52,7 @@ export async function loginUser(form: LoginForm): Promise<LoginResponse> {
 
 	if (!res.ok) {
 		const data = await res.json().catch(() => ({}))
-		throw new Error(data.message || 'Ошибка входа')
+		throw { response: { data } }
 	}
 
 	return res.json()

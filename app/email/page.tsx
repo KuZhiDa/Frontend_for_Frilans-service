@@ -63,22 +63,20 @@ export default function EmailVerificationPage() {
 				return
 			}
 
-			const res = await fetchWithAuth(`${API_URL}/api/email/send/${currentUserId}`, {
+			await fetchWithAuth(`${API_URL}/api/email/send/${currentUserId}`, {
 				method: 'POST',
 				headers: {
 					'Content-Type': 'application/json',
 				},
 			})
 
-			const data = await res.json()
-
-			if (res.ok) {
-				setMessage('Письмо отправлено! Можно закрыть страницу.')
-			} else {
-				setMessage(data.message || 'Ошибка отправки письма')
-			}
+			setMessage('Письмо отправлено! Можно закрыть страницу.')
 		} catch (err: any) {
-			setMessage('Ошибка соединения с сервером')
+			const message = err?.response?.data?.message
+			const errorMessage = typeof message === 'string' 
+				? message 
+				: err?.message || 'Ошибка соединения с сервером'
+			setMessage(errorMessage)
 		} finally {
 			setResending(false)
 		}

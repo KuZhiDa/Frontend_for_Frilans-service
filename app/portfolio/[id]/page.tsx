@@ -13,8 +13,14 @@ interface PortfolioCard {
 	project: boolean
 }
 
+interface FormErrors {
+	skillName?: string
+	experience?: string
+	infoAboutSkillOrExperience?: string
+}
+
 interface ErrorResponse {
-	message?: string
+	message?: string | Record<string, Record<string, string>>
 }
 
 export default function PortfolioPage() {
@@ -31,6 +37,7 @@ export default function PortfolioPage() {
 		experience: '',
 		infoAboutSkillOrExperience: '',
 	})
+	const [errors, setErrors] = useState<FormErrors>({})
 	const [showEmailModal, setShowEmailModal] = useState(false)
 	const [resendingEmail, setResendingEmail] = useState(false)
 	const [emailError, setEmailError] = useState<string | null>(null)
@@ -68,19 +75,18 @@ export default function PortfolioPage() {
 				return
 			}
 
-			const response = await fetchWithAuth(`${API_URL}/api/email/send/${id_user}`, {
+			await fetchWithAuth(`${API_URL}/api/email/send/${id_user}`, {
 				method: 'POST',
 				headers: {
 					'Content-Type': 'application/json',
 				},
 			})
-
-			if (!response.ok) {
-				const data = await response.json()
-				throw new Error(data.message || 'Ошибка при отправке письма')
-			}
 		} catch (err: any) {
-			setEmailError('Ошибка при отправке письма: ' + err.message)
+			const message = err?.response?.data?.message
+			const errorMessage = typeof message === 'string' 
+				? message 
+				: err?.message || 'Ошибка при отправке письма'
+			setEmailError('Ошибка при отправке письма: ' + errorMessage)
 		} finally {
 			setResendingEmail(false)
 		}
@@ -105,7 +111,10 @@ export default function PortfolioPage() {
 				const data: PortfolioCard[] = await res.json()
 				setCards(data)
 			} catch (err: any) {
-				const errorMessage = err?.message || 'Ошибка загрузки портфолио'
+				const message = err?.response?.data?.message
+				const errorMessage = typeof message === 'string' 
+					? message 
+					: err?.message || 'Ошибка загрузки портфолио'
 				if (isEmailConfirmationRequired(errorMessage)) {
 					handleEmailConfirmationRestriction()
 				} else {
@@ -124,6 +133,7 @@ export default function PortfolioPage() {
 
 		try {
 			setSaving(true)
+			setErrors({})
 			const id_user = localStorage.getItem('id_user')
 
 			const res = await fetchWithAuth(`${API_URL}/api/work-info/card/${id_user}`, {
@@ -138,11 +148,6 @@ export default function PortfolioPage() {
 				}),
 			})
 
-			if (!res.ok) {
-				const data: ErrorResponse = await res.json()
-				throw new Error(data.message || 'Ошибка при создании карточки')
-			}
-
 			const newCard = await res.json()
 			setCards(prev => [...prev, newCard])
 			setIsCreating(false)
@@ -152,11 +157,50 @@ export default function PortfolioPage() {
 				experience: '',
 				infoAboutSkillOrExperience: '',
 			})
+			setErrors({})
 		} catch (err: any) {
-			alert('Ошибка: ' + err.message)
+			const message = err?.response?.data?.message
+
+			if (message && typeof message === 'object' && !Array.isArray(message) && message !== null) {
+				const messages: Record<string, Record<string, string>> = message
+				const backendErrors: FormErrors = {}
+
+				if (Object.keys(messages).length > 0) {
+					Object.keys(messages).forEach(field => {
+						const msgObj = messages[field]
+						if (msgObj && typeof msgObj === 'object') {
+							if (msgObj.isNotEmpty)
+								backendErrors[field as keyof FormErrors] = msgObj.isNotEmpty
+							else if (msgObj.isLength)
+								backendErrors[field as keyof FormErrors] = msgObj.isLength
+							else if (msgObj.length)
+								backendErrors[field as keyof FormErrors] = msgObj.length
+							else if (msgObj.min)
+								backendErrors[field as keyof FormErrors] = msgObj.min
+							else if (msgObj.max)
+								backendErrors[field as keyof FormErrors] = msgObj.max
+							else if (msgObj.matches)
+								backendErrors[field as keyof FormErrors] = msgObj.matches
+						}
+					})
+					setErrors(backendErrors)
+					return
+				}
+			}
+
+			const errorMessage = typeof message === 'string' 
+				? message 
+				: err?.message || 'Ошибка при создании карточки'
+			alert('Ошибка: ' + errorMessage)
 		} finally {
 			setSaving(false)
 		}
+	}
+
+	const renderFieldErrors = (field: keyof FormErrors) => {
+		const msg = errors[field]
+		if (!msg) return null
+		return <p className='text-red-600 text-sm mt-1'>{msg}</p>
 	}
 
 	const handleBack = () => {
@@ -258,11 +302,21 @@ export default function PortfolioPage() {
 									<input
 										type='text'
 										value={formData.skillName}
-										onChange={e =>
+										onChange={e => {
 											setFormData({ ...formData, skillName: e.target.value })
-										}
-										className='w-full px-4 py-2 border rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500'
+											if (errors.skillName) {
+												setErrors(prev => {
+													const newErrors = { ...prev }
+													delete newErrors.skillName
+													return newErrors
+												})
+											}
+										}}
+										className={`w-full px-4 py-2 border rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 ${
+											errors.skillName ? 'border-red-500 bg-red-50' : ''
+										}`}
 									/>
+									{renderFieldErrors('skillName')}
 								</div>
 								<div>
 									<label className='block text-sm font-medium text-gray-700 mb-2'>
@@ -271,11 +325,21 @@ export default function PortfolioPage() {
 									<input
 										type='number'
 										value={formData.experience}
-										onChange={e =>
+										onChange={e => {
 											setFormData({ ...formData, experience: e.target.value })
-										}
-										className='w-full px-4 py-2 border rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500'
+											if (errors.experience) {
+												setErrors(prev => {
+													const newErrors = { ...prev }
+													delete newErrors.experience
+													return newErrors
+												})
+											}
+										}}
+										className={`w-full px-4 py-2 border rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 ${
+											errors.experience ? 'border-red-500 bg-red-50' : ''
+										}`}
 									/>
+									{renderFieldErrors('experience')}
 								</div>
 								<div className='md:col-span-2'>
 									<label className='block text-sm font-medium text-gray-700 mb-2'>
@@ -283,15 +347,25 @@ export default function PortfolioPage() {
 									</label>
 									<textarea
 										value={formData.infoAboutSkillOrExperience}
-										onChange={e =>
+										onChange={e => {
 											setFormData({
 												...formData,
 												infoAboutSkillOrExperience: e.target.value,
 											})
-										}
+											if (errors.infoAboutSkillOrExperience) {
+												setErrors(prev => {
+													const newErrors = { ...prev }
+													delete newErrors.infoAboutSkillOrExperience
+													return newErrors
+												})
+											}
+										}}
 										rows={4}
-										className='w-full px-4 py-2 border rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500'
+										className={`w-full px-4 py-2 border rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 ${
+											errors.infoAboutSkillOrExperience ? 'border-red-500 bg-red-50' : ''
+										}`}
 									/>
+									{renderFieldErrors('infoAboutSkillOrExperience')}
 								</div>
 							</div>
 

@@ -18,9 +18,10 @@ interface Feedback {
 		price: number
 	}
 	executor?: {
-		id: number
 		username: string
-		rating: number
+		id: number
+		rating_count: number
+		rating_sum: number
 		createdAt: string
 	}
 }
@@ -61,6 +62,7 @@ export default function MyFeedbacksPage() {
 
 			if (!res.ok) throw new Error(`Ошибка загрузки откликов: ${res.status}`)
 			const data: Feedback[] = await res.json()
+			console.log(data)
 			setFeedbacks(data)
 		} catch (err: any) {
 			setError(err.message)
@@ -190,7 +192,11 @@ export default function MyFeedbacksPage() {
 										>
 											{fb.executor.username}
 										</span>{' '}
-										(рейтинг: {fb.executor.rating})
+										(рейтинг:{' '}
+										{fb.executor.rating_sum > 0
+											? fb.executor.rating_sum / fb.executor.rating_count
+											: 0}
+										)
 									</p>
 									<div className='flex gap-2'>
 										<button

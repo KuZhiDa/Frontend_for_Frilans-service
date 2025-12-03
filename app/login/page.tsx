@@ -5,6 +5,12 @@ import { useRouter } from 'next/navigation'
 import { loginUser, LoginForm } from '@/lib/api'
 import { saveUserData, getUserData } from '@/lib/storage'
 
+interface FormErrors {
+	login?: string
+	password?: string
+	role_user?: string
+}
+
 export default function LoginPage() {
 	const router = useRouter()
 	const [form, setForm] = useState<LoginForm>({
@@ -12,6 +18,7 @@ export default function LoginPage() {
 		password: '',
 		role_user: 'E',
 	})
+	const [errors, setErrors] = useState<FormErrors>({})
 	const [error, setError] = useState('')
 
 	useEffect(() => {
@@ -24,11 +31,20 @@ export default function LoginPage() {
 	const handleChange = (e: React.ChangeEvent<HTMLInputElement>) => {
 		const { name, value } = e.target
 		setForm({ ...form, [name]: value })
+
+		if (errors[name as keyof FormErrors]) {
+			setErrors(prev => {
+				const newErrors = { ...prev }
+				delete newErrors[name as keyof FormErrors]
+				return newErrors
+			})
+		}
 		if (error) setError('')
 	}
 
 	const handleSubmit = async (e: React.FormEvent) => {
 		e.preventDefault()
+		setErrors({})
 		setError('')
 
 		try {
@@ -48,8 +64,44 @@ export default function LoginPage() {
 				setError('Неизвестный ответ сервера')
 			}
 		} catch (err: any) {
-			setError(err.message || 'Ошибка входа')
+			const message = err?.response?.data?.message
+			
+			if (message && typeof message === 'object' && !Array.isArray(message) && message !== null) {
+				const messages: Record<string, Record<string, string>> = message
+				const backendErrors: FormErrors = {}
+				
+				if (Object.keys(messages).length > 0) {
+					Object.keys(messages).forEach(field => {
+						const msgObj = messages[field]
+						if (msgObj && typeof msgObj === 'object') {
+							if (msgObj.isNotEmpty)
+								backendErrors[field as keyof FormErrors] = msgObj.isNotEmpty
+							else if (msgObj.isLength)
+								backendErrors[field as keyof FormErrors] = msgObj.isLength
+							else if (msgObj.isEmail)
+								backendErrors[field as keyof FormErrors] = msgObj.isEmail
+							else if (msgObj.matches)
+								backendErrors[field as keyof FormErrors] = msgObj.matches
+							else if (msgObj.isIn)
+								backendErrors[field as keyof FormErrors] = msgObj.isIn
+						}
+					})
+					setErrors(backendErrors)
+					return
+				}
+			}
+			
+			const errorMessage = typeof message === 'string' 
+				? message 
+				: err?.message || 'Ошибка входа'
+			setError(errorMessage)
 		}
+	}
+
+	const renderFieldErrors = (field: keyof FormErrors) => {
+		const msg = errors[field]
+		if (!msg) return null
+		return <p className='text-red-600 text-sm mt-1'>{msg}</p>
 	}
 
 	return (
@@ -67,9 +119,10 @@ export default function LoginPage() {
 							value={form.login}
 							onChange={handleChange}
 							className={`w-full border border-gray-300 rounded-lg px-4 py-2 focus:outline-none focus:ring-2 focus:ring-blue-400 ${
-								error ? 'border-red-500' : ''
+								errors.login || error ? 'border-red-500' : ''
 							}`}
 						/>
+						{renderFieldErrors('login')}
 					</div>
 
 					<div className='mb-1 relative'>
@@ -80,9 +133,10 @@ export default function LoginPage() {
 							value={form.password}
 							onChange={handleChange}
 							className={`w-full border border-gray-300 rounded-lg px-4 py-2 focus:outline-none focus:ring-2 focus:ring-blue-400 ${
-								error ? 'border-red-500' : ''
+								errors.password || error ? 'border-red-500' : ''
 							}`}
 						/>
+						{renderFieldErrors('password')}
 						<div className='text-right mt-1'>
 							<button
 								type='button'

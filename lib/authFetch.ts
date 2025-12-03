@@ -65,12 +65,9 @@ export const fetchWithAuth = async (
 	}
 
 	if (!res.ok) {
-		let message = `Ошибка ${res.status}`
-		try {
-			const e = await res.json()
-			if (e?.message) message = e.message
-		} catch {}
-		throw new Error(message)
+		const data = await res.json().catch(() => ({}))
+		console.log(data)
+		throw { response: { data } }
 	}
 
 	return res

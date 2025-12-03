@@ -12,8 +12,14 @@ interface PostCard {
 	price: number
 }
 
+interface FormErrors {
+	projectName?: string
+	description?: string
+	price?: string
+}
+
 interface ErrorResponse {
-	message?: string
+	message?: string | Record<string, Record<string, string>>
 }
 
 export default function PostsPage() {
@@ -30,6 +36,7 @@ export default function PostsPage() {
 	})
 
 	const [editingPost, setEditingPost] = useState<PostCard | null>(null)
+	const [errors, setErrors] = useState<FormErrors>({})
 	const [showEmailModal, setShowEmailModal] = useState(false)
 	const [resendingEmail, setResendingEmail] = useState(false)
 	const [emailError, setEmailError] = useState<string | null>(null)
@@ -47,19 +54,18 @@ export default function PostsPage() {
 				return
 			}
 
-			const response = await fetchWithAuth(`${API_URL}/api/email/send/${id_user}`, {
+			await fetchWithAuth(`${API_URL}/api/email/send/${id_user}`, {
 				method: 'POST',
 				headers: {
 					'Content-Type': 'application/json',
 				},
 			})
-
-			if (!response.ok) {
-				const data = await response.json()
-				throw new Error(data.message || 'Ошибка при отправке письма')
-			}
 		} catch (err: any) {
-			setEmailError('Ошибка при отправке письма: ' + err.message)
+			const message = err?.response?.data?.message
+			const errorMessage = typeof message === 'string' 
+				? message 
+				: err?.message || 'Ошибка при отправке письма'
+			setEmailError('Ошибка при отправке письма: ' + errorMessage)
 		} finally {
 			setResendingEmail(false)
 		}
@@ -86,15 +92,19 @@ export default function PostsPage() {
 				const data: PostCard[] = await res.json()
 				setPosts(data)
 			} catch (err: any) {
+				const message = err?.response?.data?.message
+				const errorMessage = typeof message === 'string' 
+					? message 
+					: err?.message || 'Ошибка загрузки постов'
 				if (
-					err.message
+					errorMessage
 						.toLowerCase()
 						.includes('почта пользователя не подтверждена')
 				) {
 					setShowEmailModal(true)
 					sendVerificationEmail()
 				} else {
-					setError(err.message)
+					setError(errorMessage)
 				}
 			} finally {
 				setLoading(false)
@@ -107,6 +117,8 @@ export default function PostsPage() {
 	const handleCreatePost = async () => {
 		try {
 			setSaving(true)
+			setErrors({})
+			setError(null)
 			const id_user = localStorage.getItem('id_user')
 
 			const res = await fetchWithAuth(`${API_URL}/api/post/customer/${id_user}`, {
@@ -120,11 +132,6 @@ export default function PostsPage() {
 					price: Number(formData.price),
 				}),
 			})
-
-			if (!res.ok) {
-				const data: ErrorResponse = await res.json()
-				throw new Error(data.message || 'Ошибка при создании поста')
-			}
 
 			const { id } = await res.json()
 
@@ -144,8 +151,54 @@ export default function PostsPage() {
 				description: '',
 				price: '',
 			})
+			setErrors({})
+			setError(null)
 		} catch (err: any) {
-			alert('Ошибка: ' + err.message)
+			const message = err?.response?.data?.message
+
+			if (
+				message &&
+				typeof message === 'object' &&
+				!Array.isArray(message) &&
+				message !== null
+			) {
+				const messages: Record<string, Record<string, string>> = message
+				const backendErrors: FormErrors = {}
+
+				if (Object.keys(messages).length > 0) {
+					Object.keys(messages).forEach(field => {
+						const msgObj = messages[field]
+						if (msgObj && typeof msgObj === 'object') {
+							if (msgObj.isNotEmpty)
+								backendErrors[field as keyof FormErrors] = msgObj.isNotEmpty
+							else if (msgObj.isLength)
+								backendErrors[field as keyof FormErrors] = msgObj.isLength
+							else if (msgObj.length)
+								backendErrors[field as keyof FormErrors] = msgObj.length
+							else if (msgObj.isEmail)
+								backendErrors[field as keyof FormErrors] = msgObj.isEmail
+							else if (msgObj.matches)
+								backendErrors[field as keyof FormErrors] = msgObj.matches
+							else if (msgObj.isIn)
+								backendErrors[field as keyof FormErrors] = msgObj.isIn
+							else if (msgObj.isNumber)
+								backendErrors[field as keyof FormErrors] = msgObj.isNumber
+							else if (msgObj.min)
+								backendErrors[field as keyof FormErrors] = msgObj.min
+							else if (msgObj.max)
+								backendErrors[field as keyof FormErrors] = msgObj.max
+						}
+					})
+					setErrors(backendErrors)
+					return
+				}
+			}
+
+			const errorMessage =
+				typeof message === 'string'
+					? message
+					: err?.message || 'Ошибка при создании поста'
+			setError(errorMessage)
 		} finally {
 			setSaving(false)
 		}
@@ -156,6 +209,8 @@ export default function PostsPage() {
 
 		try {
 			setSaving(true)
+			setErrors({})
+			setError(null)
 
 			const res = await fetchWithAuth(
 				`${API_URL}/api/post/customer/${editingPost.id}`,
@@ -172,21 +227,70 @@ export default function PostsPage() {
 				}
 			)
 
-			if (!res.ok) {
-				const data = await res.json()
-				throw new Error(data.message || 'Ошибка обновления')
-			}
+			await res.json()
 
 			setPosts(prev =>
 				prev.map(p => (p.id === editingPost.id ? editingPost : p))
 			)
 
 			setEditingPost(null)
+			setErrors({})
+			setError(null)
 		} catch (err: any) {
-			alert('Ошибка: ' + err.message)
+			const message = err?.response?.data?.message
+
+			if (
+				message &&
+				typeof message === 'object' &&
+				!Array.isArray(message) &&
+				message !== null
+			) {
+				const messages: Record<string, Record<string, string>> = message
+				const backendErrors: FormErrors = {}
+
+				if (Object.keys(messages).length > 0) {
+					Object.keys(messages).forEach(field => {
+						const msgObj = messages[field]
+						if (msgObj && typeof msgObj === 'object') {
+							if (msgObj.isNotEmpty)
+								backendErrors[field as keyof FormErrors] = msgObj.isNotEmpty
+							else if (msgObj.isLength)
+								backendErrors[field as keyof FormErrors] = msgObj.isLength
+							else if (msgObj.length)
+								backendErrors[field as keyof FormErrors] = msgObj.length
+							else if (msgObj.isEmail)
+								backendErrors[field as keyof FormErrors] = msgObj.isEmail
+							else if (msgObj.matches)
+								backendErrors[field as keyof FormErrors] = msgObj.matches
+							else if (msgObj.isIn)
+								backendErrors[field as keyof FormErrors] = msgObj.isIn
+							else if (msgObj.isNumber)
+								backendErrors[field as keyof FormErrors] = msgObj.isNumber
+							else if (msgObj.min)
+								backendErrors[field as keyof FormErrors] = msgObj.min
+							else if (msgObj.max)
+								backendErrors[field as keyof FormErrors] = msgObj.max
+						}
+					})
+					setErrors(backendErrors)
+					return
+				}
+			}
+
+			const errorMessage =
+				typeof message === 'string'
+					? message
+					: err?.message || 'Ошибка при обновлении поста'
+			setError(errorMessage)
 		} finally {
 			setSaving(false)
 		}
+	}
+
+	const renderFieldErrors = (field: keyof FormErrors) => {
+		const msg = errors[field]
+		if (!msg) return null
+		return <p className='text-red-600 text-sm mt-1'>{msg}</p>
 	}
 
 	const handleDeletePost = async (id: number) => {
@@ -290,6 +394,12 @@ export default function PostsPage() {
 							Создание поста
 						</h2>
 
+						{error && (
+							<div className='w-full bg-red-50 border border-red-200 rounded-lg p-4 mb-6'>
+								<p className='text-red-600 text-center'>{error}</p>
+							</div>
+						)}
+
 						<div className='grid grid-cols-1 md:grid-cols-2 gap-6'>
 							<div>
 								<label className='block text-sm font-medium text-gray-700 mb-2'>
@@ -298,11 +408,22 @@ export default function PostsPage() {
 								<input
 									type='text'
 									value={formData.projectName}
-									onChange={e =>
+									onChange={e => {
 										setFormData({ ...formData, projectName: e.target.value })
-									}
-									className='w-full px-4 py-2 border rounded-lg focus:ring-2 focus:ring-blue-500'
+										if (errors.projectName) {
+											setErrors(prev => {
+												const newErrors = { ...prev }
+												delete newErrors.projectName
+												return newErrors
+											})
+										}
+										if (error) setError(null)
+									}}
+									className={`w-full px-4 py-2 border rounded-lg focus:ring-2 focus:ring-blue-500 ${
+										errors.projectName ? 'border-red-500 bg-red-50' : ''
+									}`}
 								/>
+								{renderFieldErrors('projectName')}
 							</div>
 
 							<div>
@@ -312,11 +433,22 @@ export default function PostsPage() {
 								<input
 									type='number'
 									value={formData.price}
-									onChange={e =>
+									onChange={e => {
 										setFormData({ ...formData, price: e.target.value })
-									}
-									className='w-full px-4 py-2 border rounded-lg focus:ring-2 focus:ring-blue-500'
+										if (errors.price) {
+											setErrors(prev => {
+												const newErrors = { ...prev }
+												delete newErrors.price
+												return newErrors
+											})
+										}
+										if (error) setError(null)
+									}}
+									className={`w-full px-4 py-2 border rounded-lg focus:ring-2 focus:ring-blue-500 ${
+										errors.price ? 'border-red-500 bg-red-50' : ''
+									}`}
 								/>
+								{renderFieldErrors('price')}
 							</div>
 
 							<div className='md:col-span-2'>
@@ -325,18 +457,33 @@ export default function PostsPage() {
 								</label>
 								<textarea
 									value={formData.description}
-									onChange={e =>
+									onChange={e => {
 										setFormData({ ...formData, description: e.target.value })
-									}
+										if (errors.description) {
+											setErrors(prev => {
+												const newErrors = { ...prev }
+												delete newErrors.description
+												return newErrors
+											})
+										}
+										if (error) setError(null)
+									}}
 									rows={4}
-									className='w-full px-4 py-2 border rounded-lg focus:ring-2 focus:ring-blue-500'
+									className={`w-full px-4 py-2 border rounded-lg focus:ring-2 focus:ring-blue-500 ${
+										errors.description ? 'border-red-500 bg-red-50' : ''
+									}`}
 								/>
+								{renderFieldErrors('description')}
 							</div>
 						</div>
 
 						<div className='flex justify-end gap-4 mt-4'>
 							<button
-								onClick={() => setIsCreating(false)}
+								onClick={() => {
+									setIsCreating(false)
+									setError(null)
+									setErrors({})
+								}}
 								className='bg-gray-500 text-white px-6 py-2 rounded-lg hover:bg-gray-600 transition'
 							>
 								Отмена
@@ -356,6 +503,12 @@ export default function PostsPage() {
 							Редактирование поста
 						</h2>
 
+						{error && (
+							<div className='w-full bg-red-50 border border-red-200 rounded-lg p-4 mb-6'>
+								<p className='text-red-600 text-center'>{error}</p>
+							</div>
+						)}
+
 						<div className='grid grid-cols-1 md:grid-cols-2 gap-6'>
 							<div>
 								<label className='block text-sm font-medium text-gray-700 mb-2'>
@@ -364,14 +517,25 @@ export default function PostsPage() {
 								<input
 									type='text'
 									value={editingPost.projectName}
-									onChange={e =>
+									onChange={e => {
 										setEditingPost({
 											...editingPost,
 											projectName: e.target.value,
 										})
-									}
-									className='w-full px-4 py-2 border rounded-lg focus:ring-2 focus:ring-blue-500'
+										if (errors.projectName) {
+											setErrors(prev => {
+												const newErrors = { ...prev }
+												delete newErrors.projectName
+												return newErrors
+											})
+										}
+										if (error) setError(null)
+									}}
+									className={`w-full px-4 py-2 border rounded-lg focus:ring-2 focus:ring-blue-500 ${
+										errors.projectName ? 'border-red-500 bg-red-50' : ''
+									}`}
 								/>
+								{renderFieldErrors('projectName')}
 							</div>
 
 							<div>
@@ -381,14 +545,25 @@ export default function PostsPage() {
 								<input
 									type='number'
 									value={editingPost.price}
-									onChange={e =>
+									onChange={e => {
 										setEditingPost({
 											...editingPost,
 											price: Number(e.target.value),
 										})
-									}
-									className='w-full px-4 py-2 border rounded-lg focus:ring-2 focus:ring-blue-500'
+										if (errors.price) {
+											setErrors(prev => {
+												const newErrors = { ...prev }
+												delete newErrors.price
+												return newErrors
+											})
+										}
+										if (error) setError(null)
+									}}
+									className={`w-full px-4 py-2 border rounded-lg focus:ring-2 focus:ring-blue-500 ${
+										errors.price ? 'border-red-500 bg-red-50' : ''
+									}`}
 								/>
+								{renderFieldErrors('price')}
 							</div>
 
 							<div className='md:col-span-2'>
@@ -397,21 +572,36 @@ export default function PostsPage() {
 								</label>
 								<textarea
 									value={editingPost.description}
-									onChange={e =>
+									onChange={e => {
 										setEditingPost({
 											...editingPost,
 											description: e.target.value,
 										})
-									}
+										if (errors.description) {
+											setErrors(prev => {
+												const newErrors = { ...prev }
+												delete newErrors.description
+												return newErrors
+											})
+										}
+										if (error) setError(null)
+									}}
 									rows={4}
-									className='w-full px-4 py-2 border rounded-lg focus:ring-2 focus:ring-blue-500'
+									className={`w-full px-4 py-2 border rounded-lg focus:ring-2 focus:ring-blue-500 ${
+										errors.description ? 'border-red-500 bg-red-50' : ''
+									}`}
 								/>
+								{renderFieldErrors('description')}
 							</div>
 						</div>
 
 						<div className='flex justify-end gap-4 mt-4'>
 							<button
-								onClick={() => setEditingPost(null)}
+								onClick={() => {
+									setEditingPost(null)
+									setError(null)
+									setErrors({})
+								}}
 								className='bg-gray-500 text-white px-6 py-2 rounded-lg hover:bg-gray-600 transition'
 							>
 								Отмена
