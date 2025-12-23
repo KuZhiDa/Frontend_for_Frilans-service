@@ -42,7 +42,8 @@ export default function PortfolioPage() {
 	const [resendingEmail, setResendingEmail] = useState(false)
 	const [emailError, setEmailError] = useState<string | null>(null)
 	const isEmailConfirmationRequired = (message?: string) =>
-		typeof message === 'string' && message.toLowerCase().includes('не подтвердил')
+		typeof message === 'string' &&
+		message.toLowerCase().includes('не подтвердил')
 
 	const handleEmailConfirmationRestriction = () => {
 		if (isMyProfile) {
@@ -83,9 +84,10 @@ export default function PortfolioPage() {
 			})
 		} catch (err: any) {
 			const message = err?.response?.data?.message
-			const errorMessage = typeof message === 'string' 
-				? message 
-				: err?.message || 'Ошибка при отправке письма'
+			const errorMessage =
+				typeof message === 'string'
+					? message
+					: err?.message || 'Ошибка при отправке письма'
 			setEmailError('Ошибка при отправке письма: ' + errorMessage)
 		} finally {
 			setResendingEmail(false)
@@ -100,7 +102,6 @@ export default function PortfolioPage() {
 			return
 		}
 
-
 		const loadCards = async () => {
 			try {
 				setLoading(true)
@@ -112,9 +113,10 @@ export default function PortfolioPage() {
 				setCards(data)
 			} catch (err: any) {
 				const message = err?.response?.data?.message
-				const errorMessage = typeof message === 'string' 
-					? message 
-					: err?.message || 'Ошибка загрузки портфолио'
+				const errorMessage =
+					typeof message === 'string'
+						? message
+						: err?.message || 'Ошибка загрузки портфолио'
 				if (isEmailConfirmationRequired(errorMessage)) {
 					handleEmailConfirmationRestriction()
 				} else {
@@ -136,17 +138,20 @@ export default function PortfolioPage() {
 			setErrors({})
 			const id_user = localStorage.getItem('id_user')
 
-			const res = await fetchWithAuth(`${API_URL}/api/work-info/card/${id_user}`, {
-				method: 'POST',
-				headers: {
-					'Content-Type': 'application/json',
-				},
-				body: JSON.stringify({
-					skillName: formData.skillName,
-					experience: Number(formData.experience),
-					infoAboutSkillOrExperience: formData.infoAboutSkillOrExperience,
-				}),
-			})
+			const res = await fetchWithAuth(
+				`${API_URL}/api/work-info/card/${id_user}`,
+				{
+					method: 'POST',
+					headers: {
+						'Content-Type': 'application/json',
+					},
+					body: JSON.stringify({
+						skillName: formData.skillName,
+						experience: Number(formData.experience),
+						infoAboutSkillOrExperience: formData.infoAboutSkillOrExperience,
+					}),
+				}
+			)
 
 			const newCard = await res.json()
 			setCards(prev => [...prev, newCard])
@@ -161,7 +166,12 @@ export default function PortfolioPage() {
 		} catch (err: any) {
 			const message = err?.response?.data?.message
 
-			if (message && typeof message === 'object' && !Array.isArray(message) && message !== null) {
+			if (
+				message &&
+				typeof message === 'object' &&
+				!Array.isArray(message) &&
+				message !== null
+			) {
 				const messages: Record<string, Record<string, string>> = message
 				const backendErrors: FormErrors = {}
 
@@ -188,9 +198,10 @@ export default function PortfolioPage() {
 				}
 			}
 
-			const errorMessage = typeof message === 'string' 
-				? message 
-				: err?.message || 'Ошибка при создании карточки'
+			const errorMessage =
+				typeof message === 'string'
+					? message
+					: err?.message || 'Ошибка при создании карточки'
 			alert('Ошибка: ' + errorMessage)
 		} finally {
 			setSaving(false)
@@ -362,7 +373,9 @@ export default function PortfolioPage() {
 										}}
 										rows={4}
 										className={`w-full px-4 py-2 border rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 ${
-											errors.infoAboutSkillOrExperience ? 'border-red-500 bg-red-50' : ''
+											errors.infoAboutSkillOrExperience
+												? 'border-red-500 bg-red-50'
+												: ''
 										}`}
 									/>
 									{renderFieldErrors('infoAboutSkillOrExperience')}
@@ -417,7 +430,6 @@ export default function PortfolioPage() {
 							))}
 						</div>
 
-						{/* Кнопка добавления новой карточки показывается ТОЛЬКО если это мой профиль */}
 						{isMyProfile && (
 							<div className='mt-8'>
 								<button

@@ -17,9 +17,10 @@ interface Feedback {
 		description: string
 		price: number
 	}
-	executor?: {
-		username: string
+	executor: {
+		executor: { id: number; username: string }
 		id: number
+		username: string
 		rating_count: number
 		rating_sum: number
 		createdAt: string
@@ -110,7 +111,8 @@ export default function MyFeedbacksPage() {
 			setIsModalOpen(false)
 			setSelectedFeedbackId(null)
 			setDeadlineDate('')
-			fetchFeedbacks()
+			const id_user = localStorage.getItem('id_user')
+			router.push(`/dashboard/${id_user}`)
 		} catch (err: any) {
 			alert(err.message || 'Ошибка при подтверждении отклика')
 		} finally {
@@ -130,7 +132,6 @@ export default function MyFeedbacksPage() {
 				const errorData = await res.json().catch(() => ({}))
 				throw new Error(errorData.message || 'Ошибка при отклонении отклика')
 			}
-			// Удаляем отзыв из списка после успешного отклонения
 			setFeedbacks(prev => prev.filter(fb => fb.id !== feedbackId))
 		} catch (err: any) {
 			alert(err.message || 'Ошибка при отклонении отклика')
@@ -187,10 +188,14 @@ export default function MyFeedbacksPage() {
 										<span
 											className='text-blue-600 font-medium cursor-pointer hover:underline'
 											onClick={() =>
-												router.push(`/dashboard/${fb.executor!.id}`)
+												router.push(
+													`/dashboard/${
+														fb.executor.executor?.id || fb.executor.id
+													}`
+												)
 											}
 										>
-											{fb.executor.username}
+											{fb.executor.executor?.username || fb.executor.username}
 										</span>{' '}
 										(рейтинг:{' '}
 										{fb.executor.rating_sum > 0
